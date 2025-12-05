@@ -48,6 +48,18 @@ export const DRIZZLE = Symbol('drizzle-connection');
           // Enable SSL in production environment
           ssl: configService.getOrThrow('env') === 'production',
         });
+        try {
+          await Promise.race([
+            pool.connect(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('DB timeout')), 2000),
+            ),
+          ]);
+          console.log("Database connection established")
+        } catch (error) {
+          console.error('DB warmup failed:', error);
+          // Don't throw - let Drizzle handle lazy connections
+        }
         return drizzle(pool, {
           schema,
         }) as DrizzleDB;
