@@ -134,7 +134,7 @@ pnpm dcdown
 
 If you run PostgreSQL locally (outside Docker):
 
-1. Create a database, e.g. `homeo_care`.
+1. Create a database, e.g. `db_name`.
 2. Set `DATABASE_URL` accordingly.
 3. Ensure the DB is reachable from your Nest server.
 
