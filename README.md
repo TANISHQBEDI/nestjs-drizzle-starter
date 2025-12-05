@@ -1,6 +1,6 @@
 # NestJS + Drizzle ORM
 
-This project is a backend service built with **NestJS** and **Drizzle ORM** using **PostgreSQL**. The repository is already wired with a basic Drizzle setup so you can start defining tables and writing queries immediately.
+This project is a basic starter template for **NestJS** and **Drizzle ORM** using **PostgreSQL**. The repository is already wired with a basic Drizzle setup so you can start defining tables and writing queries immediately.
 
 ---
 
