@@ -1,98 +1,294 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Homeo Care Server – NestJS + Drizzle ORM
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+This project is a backend service built with **NestJS** and **Drizzle ORM** using **PostgreSQL**. The repository is already wired with a basic Drizzle setup so you can start defining tables and writing queries immediately.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 1. Requirements
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Make sure you have the following installed before you start:
 
-## Project setup
+- **Node.js**: >= 20 (LTS recommended)
+- **pnpm**: >= 8 (project uses `pnpm-lock.yaml`)
+- **PostgreSQL**: >= 14
+- **Docker & Docker Compose** (optional but recommended – used via `compose.yaml`)
 
-```bash
-$ pnpm install
-```
+Environment variables:
 
-## Compile and run the project
+- `DATABASE_URL` – PostgreSQL connection string, e.g.
+  - `postgres://user:password@localhost:5432/db_name`
+
+Depending on your `ConfigService` setup (see `src/config/env.ts`), you’ll usually also have:
+
+- `NODE_ENV` or `env` – environment (e.g. `development`, `production`)
+- Any other app-specific variables you define in `env.ts`
+
+---
+
+## 2. Install dependencies
+
+From the project root :
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm install
 ```
 
-## Run tests
+If you prefer npm or yarn you can adapt, but pnpm is the default and recommended.
+
+---
+
+## 3. Database & Drizzle Setup Overview
+
+### 3.1. Drizzle config
+
+The Drizzle config lives in `drizzle.config.ts`:
+
+- Uses the `postgresql` dialect
+- Reads `DATABASE_URL` from your environment
+- Points to the schema entry file at `./src/common/databases/drizzle/schema/index.ts`
+
+```ts
+export default defineConfig({
+  schema: './src/common/databases/drizzle/schema/index.ts',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+### 3.2. Drizzle module
+
+The NestJS module that exposes the Drizzle connection is `src/common/databases/drizzle/drizzle.module.ts`.
+
+- Uses `pg.Pool` under the hood
+- Creates a Drizzle instance with the schema from `src/common/databases/drizzle/schema`
+- Exports a `DRIZZLE` injection token
+- Uses `ConfigService` to read the database URL
+
+```ts
+export const DRIZZLE = Symbol('drizzle-connection');
+
+@Module({
+  providers: [
+    {
+      provide: DRIZZLE,
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const databaseUrl: string = configService.getOrThrow('database.url');
+        const pool = new Pool({
+          connectionString: databaseUrl,
+          ssl: configService.getOrThrow('env') === 'production',
+        });
+        return drizzle(pool, { schema }) as DrizzleDB;
+      },
+    },
+  ],
+  exports: [DRIZZLE],
+})
+export class DrizzleModule {}
+```
+
+> In production, SSL is enabled automatically based on the `env` config value.
+
+### 3.3. Existing schema
+
+The base schema is in `src/common/databases/drizzle/schema`:
+
+- `auth.schema.ts` – contains tables:
+  - `users`
+  - `oauth_accounts`
+  - `refresh_tokens`
+- `utils.ts` – shared timestamp columns
+- `index.ts` – re-exports schema files for Drizzle
+
+These are already wired into Drizzle and will be pushed to your database via migrations.
+
+---
+
+## 4. Running the database
+
+### Option A – Using Docker (recommended)
+
+If your `compose.yaml` defines a Postgres service (typical for local dev):
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm dcup
 ```
 
-## Deployment
+This will run:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+```json
+"dcup": "docker compose up -d"
+```
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+To stop and remove containers/volumes:
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm dcdown
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+> Check `compose.yaml` to adjust database name, user, and password and make sure your `DATABASE_URL` matches those values.
 
-## Resources
+### Option B – Local Postgres
 
-Check out a few resources that may come in handy when working with NestJS:
+If you run PostgreSQL locally (outside Docker):
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+1. Create a database, e.g. `homeo_care`.
+2. Set `DATABASE_URL` accordingly.
+3. Ensure the DB is reachable from your Nest server.
 
-## Support
+---
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## 5. Applying schema to the database (Drizzle migrations)
 
-## Stay in touch
+Once `DATABASE_URL` is set and the database is running, push the existing schema:
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+pnpm db:push
+```
 
-## License
+This runs:
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```json
+"db:push": "npx drizzle-kit push"
+```
+
+It will create the `users`, `oauth_accounts`, and `refresh_tokens` tables (and any additional tables you export from `schema/index.ts`).
+
+---
+
+## 6. Starting the NestJS server
+
+### Development mode
+
+```bash
+pnpm start:dev
+```
+
+### Production build
+
+```bash
+pnpm build
+pnpm start:prod
+```
+
+By default, Nest will bootstrap from `src/main.ts` and load `AppModule` (see `src/app.module.ts`). Make sure `DrizzleModule` is imported into `AppModule` or appropriate feature modules.
+
+---
+
+## 7. Using Drizzle in your NestJS code
+
+### 7.1. Injecting the Drizzle connection
+
+Anywhere you need database access, inject the Drizzle connection using the `DRIZZLE` token and the `DrizzleDB` type:
+
+```ts
+import { Inject, Injectable } from '@nestjs/common';
+import { DRIZZLE } from 'src/common/databases/drizzle/drizzle.module';
+import { DrizzleDB } from 'src/common/databases/drizzle/types/drizzle';
+
+@Injectable()
+export class UsersService {
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+}
+```
+
+Make sure the module that provides `UsersService` imports `DrizzleModule` so the provider is available.
+
+### 7.2. Reading data
+
+Use `db.query.<table>` helpers or the fluent query builder:
+
+```ts
+import { usersTable } from 'src/common/databases/drizzle/schema/auth.schema';
+
+// Example: find all users
+const users = await this.db.select().from(usersTable);
+
+// Example: using query API (if generated by drizzle)
+// const users = await this.db.query.usersTable.findMany();
+```
+
+### 7.3. Writing data
+
+```ts
+import { usersTable } from 'src/common/databases/drizzle/schema/auth.schema';
+
+// Insert
+await this.db.insert(usersTable).values({
+  email: 'test@example.com',
+  hashedPassword: 'hashed-password',
+});
+
+// Update
+await this.db
+  .update(usersTable)
+  .set({ emailVerified: true })
+  .where(eq(usersTable.id, userId));
+
+// Delete
+await this.db.delete(usersTable).where(eq(usersTable.id, userId));
+```
+
+### 7.4. Transactions
+
+```ts
+await this.db.transaction(async (tx) => {
+  // use `tx` instead of `this.db` inside the transaction
+});
+```
+
+---
+
+## 8. Adding new tables / extending the schema
+
+1. **Create a new schema file** under `src/common/databases/drizzle/schema/`, e.g. `appointments.schema.ts`.
+2. **Define your table(s)** using Drizzle’s `pgTable` helpers.
+3. **Export** them from `schema/index.ts`, e.g.
+
+   ```ts
+   export * from './auth.schema';
+   ```
+
+4. **Run migrations** to apply the changes:
+
+   ```bash
+   pnpm db:push
+   ```
+
+5. **Use in code** by importing from your new schema file and issuing queries via the injected `DrizzleDB` instance.
+
+---
+
+## 9. Running tests
+
+Unit tests:
+
+```bash
+pnpm test
+```
+
+E2E tests:
+
+```bash
+pnpm test:e2e
+```
+
+Coverage:
+
+```bash
+pnpm test:cov
+```
+
+---
+
+## 10. Quick start checklist
+
+1. Install dependencies: `pnpm install`
+2. Start Postgres (Docker: `pnpm dcup` or local DB)
+3. Set `DATABASE_URL` in `.env` or your environment
+4. Push schema: `pnpm db:push`
+5. Start dev server: `pnpm start:dev`
+6. Inject `DRIZZLE` and start writing queries
+
